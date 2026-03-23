@@ -1,5 +1,5 @@
-# clinicalnemoclaw
-NemoClaw installation for the OpenClaw Clinical Hackathon
+# Clinical NemoClaw
+NemoClaw installation for the OpenClaw Clinical Hackathon.
 
 ## Notes
 
