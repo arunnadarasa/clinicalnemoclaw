@@ -62,6 +62,35 @@ Notes from end-to-end setup: install, gateway confusion, `nemoclaw` services, an
 
 ---
 
+## Web search, `web_fetch`, and network policy (sandbox)
+
+### OpenClaw version inside the sandbox
+
+- The NemoClaw sandbox may ship **OpenClaw 2026.3.x** where `tools.web.search.provider` only allows **`brave`**, **`perplexity`**, **`grok`**, **`gemini`**, **`kimi`** — not **`duckduckgo`** (even if newer [OpenClaw docs](https://docs.openclaw.ai/tools/web) list it). Use **`BRAVE_API_KEY`** in **`~/.openclaw/.env`** in the **sandbox** (host `~/.openclaw` is a different instance).
+- **`openclaw configure --section web`** can fail with **`EACCES`** on `/sandbox/.openclaw/openclaw.json` (root-owned, immutable). Prefer **`.env`** or a **host-level** policy edit (e.g. container `ctr` as root) if you must change JSON.
+
+### `getaddrinfo EAI_AGAIN` vs “approve `www.gov.uk:443`”
+
+- Dashboard / gateway errors like **`web_fetch failed: getaddrinfo EAI_AGAIN www.gov.uk`** happen at **DNS resolution**, **before** TCP to `:443`.
+- **[NemoClaw network policies](https://docs.nvidia.com/nemoclaw/latest/reference/network-policies.html)** describe **TLS :443** allowlists and **operator approval** in **`openshell term`**. Approving **`www.gov.uk:443`** helps **HTTPS after** you have an IP; it does **not** by itself fix **broken or blocked DNS** to the cluster resolver.
+- In one sandbox we observed:
+  - **`/etc/resolv.conf`** → **`nameserver 10.43.0.10`** (k3s/CoreDNS),
+  - **`getent` / `socket.getaddrinfo`** → failure (`Temporary failure in name resolution`),
+  - **`curl --noproxy '*'`** → **resolving timed out**,
+  - **`HTTPS_PROXY=http://10.200.0.1:3128`** → **`CONNECT tunnel failed, response 403`** (proxy rejects CONNECT; separate from DNS).
+- **Conclusion:** if **`getent hosts www.gov.uk`** fails inside the sandbox, fix **cluster DNS / proxy / OpenShell** with NVIDIA — don’t expect GOV.UK-only YAML or a **:443** approval row alone to clear **`EAI_AGAIN`**.
+
+### `openshell policy set` gotchas
+
+- Must pass a **full** policy document (including **`filesystem_policy`**, etc.); a fragment with only `network_policies` can error with **“filesystem policy cannot be removed on a live sandbox”**.
+- Keep a merged file (baseline + extra `network_policies` blocks) and apply that file.
+
+### Host diagnostic script (optional)
+
+- This repo includes **`scripts/debug-sandbox-dns.sh`**: run from your machine with `openshell` in `PATH`. It SSHs into the sandbox, captures **`resolv.conf`**, **`getent`**, **Python `getaddrinfo`**, **`curl`** (with and without `--noproxy`), and proxy env, and appends NDJSON lines to **`DEBUG_LOG_PATH`** (default **`./debug-sandbox-dns.ndjson`**). Use the output when escalating DNS/proxy issues to NVIDIA.
+
+---
+
 ## Quick reference
 
 | Issue | Where to look |
@@ -70,6 +99,7 @@ Notes from end-to-end setup: install, gateway confusion, `nemoclaw` services, an
 | Port 18789 | `lsof -i :18789` |
 | Sandbox list | `nemoclaw list` / `nemoclaw status` |
 | Egress | `openshell term` |
+| DNS / `EAI_AGAIN` | Inside sandbox: `getent hosts www.gov.uk`; compare with gateway `/tmp/openclaw/*.log` |
 
 ---
 
